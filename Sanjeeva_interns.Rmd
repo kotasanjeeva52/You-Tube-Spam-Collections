@@ -1,0 +1,316 @@
++---
+title: "YouTube Spam collection"
+author: "SanjeevaReddy Kota"
+date: "September 22, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+## Clear the envirnoment.
+```{r,echo=TRUE}
+rm(list = ls(all=T))
+
+```
+## get,set and load data.
+```{r,echo=TRUE}
+
+
+getwd()
+setwd("G:/INTERNSHIP DATA")
+list.files()
+read.csv("Youtube01-Psy.csv",header = T,sep = ",",stringsAsFactors = F)->psy
+read.csv("Youtube02-KatyPerry.csv",header = T,sep = ",",stringsAsFactors = F)->katyperry
+read.csv("Youtube03-LMFAO.csv",header = T,sep = ",",stringsAsFactors = F)->LMFAO
+read.csv("Youtube04-Eminem.csv",header = T,sep = ",",stringsAsFactors = F)->Eminem
+read.csv("Youtube05-Shakira.csv",header = T,sep = ",",stringsAsFactors = F)->Shakira
+realdata <- rbind(Eminem,katyperry,LMFAO,psy,Shakira)
+realdata
+
+
+```
+###remove meaningless attributes in data.
+
+```{r,echo=TRUE}
+realdata[-c(1:3)]->san_data
+san_data
+
+#View(san_data)
+names(san_data)
+
+```
+## Missing values
+```{r,echo=TRUE}
+
+#sum(is.na(san_data))
+length(which(!complete.cases(san_data)))
+table(san_data$CLASS)
+
+prop.table(table(san_data$CLASS))
+
+
+
+
+```
+
+###  no.of words in Content.
+
+```{r,echo=TRUE}
+
+san_data$CONTENT_length=nchar(san_data$CONTENT)
+summary(san_data$CONTENT_length)
+
+
+```
+
+### Create corpus.
+```{r,echo=TRUE}
+
+library(tm)
+
+getReaders()
+getSources()
+
+you_spam=Corpus(VectorSource(san_data$CONTENT))
+print(you_spam)
+inspect(you_spam[1:5])
+
+
+
+```
+### translate all letters to lower case.
+```{r,echo=TRUE}
+clean_corpus <- tm_map(you_spam, tolower)
+
+```
+
+### remove numbers.
+```{r,echo=TRUE}
+clean_corpus <- tm_map(clean_corpus, removeNumbers)
+
+```
+### remove punctuation
+
+```{r,echo=TRUE}
+
+clean_corpus <- tm_map(clean_corpus, removePunctuation)
+
+inspect(clean_corpus[1:3])
+
+```
+
+## Stop words
+```{r,echo=TRUE}
+
+stopwords()[1:10]
+clean_corpus <- tm_map(clean_corpus, removeWords, stopwords())
+
+clean_corpus <- tm_map(clean_corpus, stripWhitespace)
+
+inspect(clean_corpus[1:3])
+
+```
+## Create Document Term Term Matrix.
+
+```{r,echo=TRUE}
+
+yt_dtm <- DocumentTermMatrix(clean_corpus)
+inspect(yt_dtm[1:4, 30:35])
+
+
+```
+
+## Separate Spam and Ham.
+```{r,echo=TRUE}
+spam_indices <- which(san_data$CLASS == "1")
+spam_indices[1:3]
+ham_indices <- which(san_data$CLASS == "0")
+ham_indices[1:3]
+```
+## Create WordCloud.
+## Create Ham WordCloud.
+
+```{r,echo=TRUE}
+
+library(wordcloud)
+
+wordcloud(clean_corpus[ham_indices], min.freq=20)
+
+```
+## Create word cloud on Spam.
+```{r,echo=TRUE}
+wordcloud(clean_corpus[spam_indices], min.freq=40)
+
+```
+##Building Spam filters using Classifications technique.
+
+## 1.Navie Bayes
+
+
+## Sample the data in Train and Test.
+
+
+```{r,echo=TRUE}
+yt_raw_train <- san_data[1:1000,]
+
+yt_raw_test <- san_data[1001:1956,]
+
+```
+## Checking the DTM and corpus.
+
+## Proportions of spam and ham in training and test are similar.
+```{r,echo=TRUE}
+
+yt_dtm_train <- yt_dtm[1:1000,]
+yt_dtm_test <- yt_dtm[1001:1956,]
+yt_corpus_train <- clean_corpus[1:1000]
+yt_corpus_test <- clean_corpus[1001:1956]
+
+
+```
+## Separate training data to spam and ham.
+```{r,echo=TRUE}
+
+spam <- subset(yt_raw_train, CLASS == "1")
+
+ham <- subset(yt_raw_train, CLASS == "0")
+
+
+```
+
+## To identify words appearing at least 5 times.
+
+```{r,echo=TRUE}
+five_times_words <- findFreqTerms(yt_dtm_train, 5)
+length(five_times_words)
+five_times_words[1:5]
+
+```
+##Create document-term matrices using frequent words.
+
+```{r,echo=TRUE}
+yt_train <- DocumentTermMatrix(yt_corpus_train, control=list(dictionary = five_times_words))
+
+yt_test <- DocumentTermMatrix(yt_corpus_test, control=list(dictionary = five_times_words))
+
+
+```
+##
+```{r,echo=TRUE}
+
+convert_count <- function(x) {
+  y <- ifelse(x > 0, 1,0)
+  y <- factor(y, levels=c(0,1), labels=c("No", "Yes"))
+  y
+}
+
+yt_train <- apply(yt_train, 2, convert_count)
+yt_test <- apply(yt_test, 2, convert_count)
+
+
+
+```
+
+## Naive Bayes.
+```{r,echo=TRUE}
+
+library(e1071)
+
+naiveBayes(yt_train,factor(yt_raw_train$CLASS))->nb
+
+library(gmodels)
+
+#CrossTable(nb, yt_raw_train$CLASS)
+
+
+ class(nb)
+```
+
+### Evaluate the performance on the test data.
+
+```{r,echo=TRUE}
+
+pred <- predict(nb, newdata=yt_test)
+
+pred
+CrossTable(pred,yt_raw_test$CLASS)
+
+table(pred,yt_raw_test$CLASS)->tb
+
+#confusionMatrix(tb)
+which(pred!=yt_raw_test$CLASS)
+
+yt_raw_test$CLASS[c(55,217)]
+pred[c(55,217)]
+
+
+yt_raw_test$CONTENT[c(55,217)]
+
+```
+## confusion Matrix.
+```{r,echo=TRUE}
+
+library(caret)
+
+confusionMatrix(table(pred,yt_raw_test$CLASS))
+
+```
+## SVM
+
+```{r,echo=TRUE}
+317+262
+579/(317+262+303+74)
+ 
+#CrossTable(, spam_raw_test$type)
+
+
+```
+
+```{r,echo=TRUE}
+
+
+
+
+
+library(caret)
+
+svm(factor(yt_raw_train$CLASS)~.,data=yt_train,kernel='linear',gamma=0.2,cost=100)->model
+
+summary(model)
+
+x <- data.frame(as.matrix(yt_train))
+class <- yt_raw_train$CLASS
+head(x$class)
+
+x <- cbind(x,class)
+head(y$class)
+model1 <- svm(class~.,data = x)
+summary(model1)
+
+predict(model1,x)->pred12
+table(pred12)
+#confusionMatrix(pred12,x$class)
+head(x$class)
+levels(x$class)
+
+head(x$class)
+y <- data.frame(as.matrix(yt_test))
+head(y$class)
+
+head(y$class)
+#predict(model1,y,response="class")
+head(y$class)
+head(x$class)
+x$class
+summary(model1)
+
+
+predict(model,yt_train)->train.pred
+
+#predict(model,yt_test)
+
+
+```
